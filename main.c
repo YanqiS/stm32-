@@ -83,6 +83,7 @@ UART_HandleTypeDef *Serial_Num;
 #define ADC_CHANNELS 	6
 #define LightSensr_Gate 	50
 #define LIGHT_SENSOR_INVERT	0	// 0: keep raw mapping; 1: invert when hardware is wired opposite
+#define SKIP_BOOT_FLASH_VALIDATION 1	// 1: skip flash read/write self-test at boot
 uint16_t adc_buffer[ADC_CHANNELS] = { 0 };
 
 static uint8_t NormalizeLightSensor(uint16_t raw_adc) {
@@ -782,6 +783,13 @@ int main(void) {
 //	  HAL_Delay(500);
 
 	uint8_t temp1[4], temp2[4];
+#if SKIP_BOOT_FLASH_VALIDATION
+	(void) temp1;
+	(void) temp2;
+	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "Flash Test Skip");
+	EncrypKey = 0x36;
+	HAL_Delay(300);
+#else
 	temp1[0] = 123;
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "Flash Test");
 //	while( HAL_GPIO_ReadPin(ESP_TRG_STM_GPIO_Port,ESP_TRG_STM_Pin) )
@@ -850,6 +858,7 @@ int main(void) {
 	}
 
 	HAL_Delay(500);
+#endif
 ////
 
 //// ADC
