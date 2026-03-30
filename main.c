@@ -84,6 +84,7 @@ UART_HandleTypeDef *Serial_Num;
 #define LightSensr_Gate 	50
 #define LIGHT_SENSOR_INVERT	0	// 0: keep raw mapping; 1: invert when hardware is wired opposite
 #define SKIP_BOOT_FLASH_VALIDATION 1	// 1: skip flash read/write self-test at boot
+#define ENABLE_SYSTEM_BEEP        0	// 0: disable all Sys_tune* buzzer output for troubleshooting
 #define ENABLE_MOTOR_ERROR_BEEP   0	// 0: avoid continuous buzzer on motor protection faults
 uint16_t adc_buffer[ADC_CHANNELS] = { 0 };
 
@@ -4954,6 +4955,10 @@ void SPI_TFT_Start(SPI_HandleTypeDef *hspi) {
 }
 
 void Sys_tune1() {
+#if !ENABLE_SYSTEM_BEEP
+	return;
+#endif
+
 	htim1.Instance = TIM1;
 //	  htim1.Init.Prescaler = 63;
 //	  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -4987,6 +4992,10 @@ void Sys_tune1() {
 
 void Sys_tuneX(uint32_t fq)	//fq bigger,sound lower
 {
+#if !ENABLE_SYSTEM_BEEP
+	(void) fq;
+	return;
+#endif
 
 	htim1.Instance = TIM1;
 	htim1.Init.Period = fq;
