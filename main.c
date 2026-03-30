@@ -84,6 +84,7 @@ UART_HandleTypeDef *Serial_Num;
 #define LightSensr_Gate 	50
 #define LIGHT_SENSOR_INVERT	0	// 0: keep raw mapping; 1: invert when hardware is wired opposite
 #define SKIP_BOOT_FLASH_VALIDATION 1	// 1: skip flash read/write self-test at boot
+#define ENABLE_MOTOR_ERROR_BEEP   0	// 0: avoid continuous buzzer on motor protection faults
 uint16_t adc_buffer[ADC_CHANNELS] = { 0 };
 
 static uint8_t NormalizeLightSensor(uint16_t raw_adc) {
@@ -5158,9 +5159,11 @@ void Motor_Protection_EmergencyStop(void) {
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 0, error_msg);
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, "Stopping Motor..");
 
+#if ENABLE_MOTOR_ERROR_BEEP
 	Sys_tune1();
 	HAL_Delay(300);
 	Sys_tune1();
+#endif
 
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, "Resetting...    ");
 	TA531_RC1.TA531_RC_X_trg = 0;
@@ -5177,7 +5180,9 @@ void Motor_Protection_EmergencyStop(void) {
 	TA531_Lock = 0;
 
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, "System Ready    ");
+#if ENABLE_MOTOR_ERROR_BEEP
 	Sys_tune1();
+#endif
 
 	Motor_Protection_Reset();
 	HAL_Delay(1000);
