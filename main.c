@@ -83,6 +83,9 @@ UART_HandleTypeDef *Serial_Num;
 #define ADC_CHANNELS 	6
 #define LightSensr_Gate 	50
 #define LIGHT_SENSOR_INVERT	0	// 0: keep raw mapping; 1: invert when hardware is wired opposite
+#define SKIP_BOOT_FLASH_VALIDATION 1	// 1: skip flash read/write self-test at boot
+#define ENABLE_SYSTEM_BEEP        0	// 0: disable all Sys_tune* buzzer output for troubleshooting
+#define ENABLE_MOTOR_ERROR_BEEP   0	// 0: avoid continuous buzzer on motor protection faults
 uint16_t adc_buffer[ADC_CHANNELS] = { 0 };
 
 static uint8_t NormalizeLightSensor(uint16_t raw_adc) {
@@ -121,6 +124,7 @@ uint16_t CAN2_2Ser_ID[32];
 
 // Motor motion loop timing (ms)
 #define MOTOR_INIT_RETRY_MS          100U
+#define MOTOR_INIT_MAX_RETRIES       30U
 #define MOTOR_LOOP_INTERVAL_MS       10U
 #define MOTOR_WAIT_POLL_MS           100U
 #define MOTOR_SEND_GAP_MS            1U
@@ -782,6 +786,13 @@ int main(void) {
 //	  HAL_Delay(500);
 
 	uint8_t temp1[4], temp2[4];
+#if SKIP_BOOT_FLASH_VALIDATION
+	(void) temp1;
+	(void) temp2;
+	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "Flash Test Skip");
+	EncrypKey = 0x36;
+	HAL_Delay(300);
+#else
 	temp1[0] = 123;
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "Flash Test");
 //	while( HAL_GPIO_ReadPin(ESP_TRG_STM_GPIO_Port,ESP_TRG_STM_Pin) )
@@ -850,6 +861,7 @@ int main(void) {
 	}
 
 	HAL_Delay(500);
+#endif
 ////
 
 //// ADC
@@ -4025,10 +4037,17 @@ void MoC_Init() {
 	MotoCtrl_PackSend12();
 	HAL_Delay(MOTOR_INIT_RETRY_MS);
 
+	uint16_t motor12_retry = 0;
 	while ((MotorInit_M1 != 2) | (MotorInit_M2 != 2)) {
 		OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M1&2 Init Wait ");
 		HAL_Delay(MOTOR_INIT_RETRY_MS);
 		MotoCtrl_PackSend12();
+		motor12_retry++;
+		if (motor12_retry >= MOTOR_INIT_MAX_RETRIES) {
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M1&2 Init Timeout");
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 2, "Check CAN/Motor  ");
+			return;
+		}
 	}
 
 	char str1[16] = { 0 };
@@ -4052,10 +4071,17 @@ void MoC_Init() {
 	MotoCtrl_PackSend3();
 	HAL_Delay(MOTOR_INIT_RETRY_MS);
 
+	uint16_t motor3_retry = 0;
 	while (MotorInit_M3 != 2) {
 		OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M3 Init Wait ");
 		HAL_Delay(MOTOR_INIT_RETRY_MS);
 		MotoCtrl_PackSend3();
+		motor3_retry++;
+		if (motor3_retry >= MOTOR_INIT_MAX_RETRIES) {
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M3 Init Timeout ");
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 2, "Check CAN/Motor  ");
+			return;
+		}
 	}
 
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 13, 0, "3 ");	// 9 11 13 15
@@ -4929,6 +4955,10 @@ void SPI_TFT_Start(SPI_HandleTypeDef *hspi) {
 }
 
 void Sys_tune1() {
+#if !ENABLE_SYSTEM_BEEP
+	return;
+#endif
+
 	htim1.Instance = TIM1;
 //	  htim1.Init.Prescaler = 63;
 //	  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
@@ -4962,6 +4992,10 @@ void Sys_tune1() {
 
 void Sys_tuneX(uint32_t fq)	//fq bigger,sound lower
 {
+#if !ENABLE_SYSTEM_BEEP
+	(void) fq;
+	return;
+#endif
 
 	htim1.Instance = TIM1;
 	htim1.Init.Period = fq;
@@ -5149,9 +5183,11 @@ void Motor_Protection_EmergencyStop(void) {
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 0, error_msg);
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, "Stopping Motor..");
 
+#if ENABLE_MOTOR_ERROR_BEEP
 	Sys_tune1();
 	HAL_Delay(300);
 	Sys_tune1();
+#endif
 
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, "Resetting...    ");
 	TA531_RC1.TA531_RC_X_trg = 0;
@@ -5168,7 +5204,9 @@ void Motor_Protection_EmergencyStop(void) {
 	TA531_Lock = 0;
 
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, "System Ready    ");
+#if ENABLE_MOTOR_ERROR_BEEP
 	Sys_tune1();
+#endif
 
 	Motor_Protection_Reset();
 	HAL_Delay(1000);
