@@ -123,6 +123,7 @@ uint16_t CAN2_2Ser_ID[32];
 
 // Motor motion loop timing (ms)
 #define MOTOR_INIT_RETRY_MS          100U
+#define MOTOR_INIT_MAX_RETRIES       30U
 #define MOTOR_LOOP_INTERVAL_MS       10U
 #define MOTOR_WAIT_POLL_MS           100U
 #define MOTOR_SEND_GAP_MS            1U
@@ -4035,10 +4036,17 @@ void MoC_Init() {
 	MotoCtrl_PackSend12();
 	HAL_Delay(MOTOR_INIT_RETRY_MS);
 
+	uint16_t motor12_retry = 0;
 	while ((MotorInit_M1 != 2) | (MotorInit_M2 != 2)) {
 		OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M1&2 Init Wait ");
 		HAL_Delay(MOTOR_INIT_RETRY_MS);
 		MotoCtrl_PackSend12();
+		motor12_retry++;
+		if (motor12_retry >= MOTOR_INIT_MAX_RETRIES) {
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M1&2 Init Timeout");
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 2, "Check CAN/Motor  ");
+			return;
+		}
 	}
 
 	char str1[16] = { 0 };
@@ -4062,10 +4070,17 @@ void MoC_Init() {
 	MotoCtrl_PackSend3();
 	HAL_Delay(MOTOR_INIT_RETRY_MS);
 
+	uint16_t motor3_retry = 0;
 	while (MotorInit_M3 != 2) {
 		OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M3 Init Wait ");
 		HAL_Delay(MOTOR_INIT_RETRY_MS);
 		MotoCtrl_PackSend3();
+		motor3_retry++;
+		if (motor3_retry >= MOTOR_INIT_MAX_RETRIES) {
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, "M3 Init Timeout ");
+			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 2, "Check CAN/Motor  ");
+			return;
+		}
 	}
 
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 13, 0, "3 ");	// 9 11 13 15
