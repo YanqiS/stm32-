@@ -124,10 +124,114 @@ uint16_t CAN2_2Ser_ID[32];
 #define MOTOR_LOOP_INTERVAL_MS       10U
 #define MOTOR_WAIT_POLL_MS           100U
 #define MOTOR_SEND_GAP_MS            1U
+
+// USB relay switch timing (ms)
+#define USB_SWITCH_DISCONNECT_MS     150U
+#define USB_SWITCH_SETTLE_MS         30U
+#define USB_ENUM_WAIT_MS             1500U
+#define USB_SAFE_PARK_PORT           0U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+
+typedef enum {
+	USB_SWITCH_IDLE = 0,
+	USB_SWITCH_DISCONNECT_WAIT,
+	USB_SWITCH_RELAY_SETTLE,
+	USB_SWITCH_ENUM_WAIT
+} USBSwitchState;
+
+typedef struct {
+	uint8_t initialized;
+	uint8_t current_port;
+	uint8_t target_port;
+	uint32_t deadline_ms;
+	USBSwitchState state;
+} USBSwitchController;
+
+static USBSwitchController g_usb_switch = { 0 };
+
+static uint8_t USB_IsValidPort(uint8_t port) {
+	return (port <= 2U);
+}
+
+static void USB_ApplyRelayPort(uint8_t port) {
+	if (!USB_IsValidPort(port)) {
+		return;
+	}
+
+	if (port == 0U) {
+		// Keep original behavior: only force RELAY_1 low for port 0.
+		// RELAY_2 state is intentionally not overwritten here.
+		HAL_GPIO_WritePin(USB_RELAY_1_GPIO_Port, USB_RELAY_1_Pin, GPIO_PIN_RESET);
+	} else if (port == 1U) {
+		HAL_GPIO_WritePin(USB_RELAY_1_GPIO_Port, USB_RELAY_1_Pin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(USB_RELAY_2_GPIO_Port, USB_RELAY_2_Pin, GPIO_PIN_RESET);
+	} else {
+		HAL_GPIO_WritePin(USB_RELAY_1_GPIO_Port, USB_RELAY_1_Pin, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(USB_RELAY_2_GPIO_Port, USB_RELAY_2_Pin, GPIO_PIN_SET);
+	}
+}
+
+static void USB_StartSwitchSequence(void) {
+	g_usb_switch.state = USB_SWITCH_DISCONNECT_WAIT;
+	USB_ApplyRelayPort(USB_SAFE_PARK_PORT);
+	g_usb_switch.deadline_ms = HAL_GetTick() + USB_SWITCH_DISCONNECT_MS;
+}
+
+static void USB_RequestPort(uint8_t target_port) {
+	if (!USB_IsValidPort(target_port)) {
+		return;
+	}
+
+	if (!g_usb_switch.initialized) {
+		g_usb_switch.current_port = target_port;
+		g_usb_switch.target_port = target_port;
+		g_usb_switch.state = USB_SWITCH_IDLE;
+		g_usb_switch.initialized = 1U;
+		USB_ApplyRelayPort(target_port);
+		return;
+	}
+
+	g_usb_switch.target_port = target_port;
+
+	if (g_usb_switch.state == USB_SWITCH_IDLE
+			&& g_usb_switch.target_port != g_usb_switch.current_port) {
+		USB_StartSwitchSequence();
+	}
+}
+
+static void USB_ProcessSwitchStateMachine(void) {
+	uint32_t now = HAL_GetTick();
+
+	if (!g_usb_switch.initialized) {
+		return;
+	}
+
+	if (g_usb_switch.state == USB_SWITCH_IDLE) {
+		if (g_usb_switch.target_port != g_usb_switch.current_port) {
+			USB_StartSwitchSequence();
+		}
+		return;
+	}
+
+	if ((int32_t) (now - g_usb_switch.deadline_ms) < 0) {
+		return;
+	}
+
+	if (g_usb_switch.state == USB_SWITCH_DISCONNECT_WAIT) {
+		USB_ApplyRelayPort(g_usb_switch.target_port);
+		g_usb_switch.state = USB_SWITCH_RELAY_SETTLE;
+		g_usb_switch.deadline_ms = now + USB_SWITCH_SETTLE_MS;
+	} else if (g_usb_switch.state == USB_SWITCH_RELAY_SETTLE) {
+		g_usb_switch.state = USB_SWITCH_ENUM_WAIT;
+		g_usb_switch.deadline_ms = now + USB_ENUM_WAIT_MS;
+	} else if (g_usb_switch.state == USB_SWITCH_ENUM_WAIT) {
+		g_usb_switch.current_port = g_usb_switch.target_port;
+		g_usb_switch.state = USB_SWITCH_IDLE;
+	}
+}
 
 /* USER CODE END PM */
 
@@ -498,6 +602,13 @@ int main(void) {
 	HAL_Delay(1000);
 	OLED_Fill(OLED_I2C_ch, OLED_type, 0x00);
 	HAL_Delay(1000);
+
+	g_usb_switch.initialized = 1U;
+	g_usb_switch.current_port = USB_SAFE_PARK_PORT;
+	g_usb_switch.target_port = USB_SAFE_PARK_PORT;
+	g_usb_switch.state = USB_SWITCH_IDLE;
+	g_usb_switch.deadline_ms = HAL_GetTick();
+	USB_ApplyRelayPort(USB_SAFE_PARK_PORT);
 
 	HAL_FDCAN_MspInit(&hfdcan1);
 	HAL_FDCAN_MspInit(&hfdcan2);
@@ -1244,42 +1355,36 @@ int main(void) {
 
 		//	HAL_Delay(20);
 
-		if (id1 == 0)	//id1 = 0, no RC
-				{
-			snprintf(oled_line, sizeof(oled_line), "L1:%3d L2:%3d",
-					TA531SysEnv.TA531_env_LightA1, TA531SysEnv.TA531_env_LightA2);
+			if (id1 == 0)	//id1 = 0, no RC
+					{
+				snprintf(oled_line, sizeof(oled_line), "L1:%3d L2:%3d",
+						TA531SysEnv.TA531_env_LightA1, TA531SysEnv.TA531_env_LightA2);
 			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 1, oled_line);
 
 			snprintf(oled_line, sizeof(oled_line), "L3:%3d L4:%3d",
 					TA531SysEnv.TA531_env_LightA3, TA531SysEnv.TA531_env_LightA4);
 			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 2, oled_line);
 
-			snprintf(oled_line, sizeof(oled_line), "A1:%3d A2:%3d",
-					TA531SysEnv.TA531_env_ADC1, TA531SysEnv.TA531_env_ADC2);
-			OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, oled_line);
-		}
+				snprintf(oled_line, sizeof(oled_line), "A1:%3d A2:%3d",
+						TA531SysEnv.TA531_env_ADC1, TA531SysEnv.TA531_env_ADC2);
+				OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, oled_line);
+			}
 
-		if (TSA3_0x52_Flag == 1) {
-			if (TA531SysEnv.TA531_env_KL15 == 1) {
-				HAL_GPIO_WritePin(KL15_RELAY_GPIO_Port, KL15_RELAY_Pin, 1);	//F
+			USB_ProcessSwitchStateMachine();
+
+			if (TSA3_0x52_Flag == 1) {
+				if (TA531SysEnv.TA531_env_KL15 == 1) {
+					HAL_GPIO_WritePin(KL15_RELAY_GPIO_Port, KL15_RELAY_Pin, 1);	//F
 //				char *str = "*KL15 Relay ON";
 //				OLED_ShowString(OLED_I2C_ch ,OLED_type,0, 2, str );
-			} else if (TA531SysEnv.TA531_env_KL15 == 0) {
-				HAL_GPIO_WritePin(KL15_RELAY_GPIO_Port, KL15_RELAY_Pin, 0);
-			}
+				} else if (TA531SysEnv.TA531_env_KL15 == 0) {
+					HAL_GPIO_WritePin(KL15_RELAY_GPIO_Port, KL15_RELAY_Pin, 0);
+				}
 
-			if (TA531SysEnv.TA531_env_USB1 == 0) {
-				HAL_GPIO_WritePin(USB_RELAY_1_GPIO_Port, USB_RELAY_1_Pin, 0);//F
-			} else if (TA531SysEnv.TA531_env_USB1 == 1) {
-				HAL_GPIO_WritePin(USB_RELAY_1_GPIO_Port, USB_RELAY_1_Pin, 1);
-				HAL_GPIO_WritePin(USB_RELAY_2_GPIO_Port, USB_RELAY_2_Pin, 0);
-			} else if (TA531SysEnv.TA531_env_USB1 == 2) {
-				HAL_GPIO_WritePin(USB_RELAY_1_GPIO_Port, USB_RELAY_1_Pin, 1);
-				HAL_GPIO_WritePin(USB_RELAY_2_GPIO_Port, USB_RELAY_2_Pin, 1);
-			}
+				USB_RequestPort(TA531SysEnv.TA531_env_USB1);
 
-			// 1			//		TA531SysEnv.TA531_env_KeyLock = (buf_rec[2]>>0)&0x03;
-			if ((TA531SysEnv.TA531_env_KeyLock == 0)
+				// 1			//		TA531SysEnv.TA531_env_KeyLock = (buf_rec[2]>>0)&0x03;
+				if ((TA531SysEnv.TA531_env_KeyLock == 0)
 					& (TA531TimCallback.TA531_Callback_flag[1] == 0)) {
 				HAL_GPIO_WritePin(COM_RELAY_1_GPIO_Port, COM_RELAY_1_Pin, 0);//F
 			} else if (TA531SysEnv.TA531_env_KeyLock == 3) {
