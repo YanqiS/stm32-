@@ -233,6 +233,23 @@ static void USB_ProcessSwitchStateMachine(void) {
 	}
 }
 
+static const char* USB_GetSwitchStatusTag(void) {
+	if (!g_usb_switch.initialized) {
+		return "U:NA";
+	}
+
+	if (g_usb_switch.state != USB_SWITCH_IDLE) {
+		return "U:SW";
+	}
+
+	if (g_usb_switch.current_port == 0U) {
+		return "U:0 ";
+	} else if (g_usb_switch.current_port == 1U) {
+		return "U:1 ";
+	}
+	return "U:2 ";
+}
+
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -766,6 +783,7 @@ int main(void) {
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 6, 0, str1);
 	itoa(Version_C, str1, 10);
 	OLED_ShowString(OLED_I2C_ch, OLED_type, 7, 0, str1);
+	OLED_ShowString(OLED_I2C_ch, OLED_type, 9, 0, (char*) USB_GetSwitchStatusTag());
 
 	if (HAL_GPIO_ReadPin(SW_DOWN_GPIO_Port, SW_DOWN_Pin) == 0) // DOWN键按下
 			{
@@ -1368,6 +1386,7 @@ int main(void) {
 				snprintf(oled_line, sizeof(oled_line), "A1:%3d A2:%3d",
 						TA531SysEnv.TA531_env_ADC1, TA531SysEnv.TA531_env_ADC2);
 				OLED_ShowString(OLED_I2C_ch, OLED_type, 0, 3, oled_line);
+				OLED_ShowString(OLED_I2C_ch, OLED_type, 9, 0, (char*) USB_GetSwitchStatusTag());
 			}
 
 			USB_ProcessSwitchStateMachine();
