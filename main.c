@@ -83,6 +83,7 @@ UART_HandleTypeDef *Serial_Num;
 #define ADC_CHANNELS 	6
 #define LightSensr_Gate 	50
 #define LIGHT_SENSOR_INVERT	0	// 0: keep raw mapping; 1: invert when hardware is wired opposite
+#define HSD1_OUTPUT_INVERT   1   // 0: HSD1 follows command directly; 1: invert HSD1 output level
 uint16_t adc_buffer[ADC_CHANNELS] = { 0 };
 
 static uint8_t NormalizeLightSensor(uint16_t raw_adc) {
@@ -1558,14 +1559,16 @@ int main(void) {
 			} else if (TA531SysEnv.TA531_env_WindowRR == 3) {
 			} else if (TA531SysEnv.TA531_env_WindowRR == 4) {
 			}
-			if (TA531SysEnv.TA531_env_HSD12_1 == 0)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD1_GPIO_Port,
-				DOOR_RELAY_HSD1_Pin, 0);
-			} else if (TA531SysEnv.TA531_env_HSD12_1 == 1)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD1_GPIO_Port,
-				DOOR_RELAY_HSD1_Pin, 1);
+			if (TA531SysEnv.TA531_env_HSD12_1 <= 1) {
+				GPIO_PinState hsd1_state =
+						(TA531SysEnv.TA531_env_HSD12_1 == 1U) ?
+								GPIO_PIN_SET : GPIO_PIN_RESET;
+				if (HSD1_OUTPUT_INVERT) {
+					hsd1_state = (hsd1_state == GPIO_PIN_SET) ?
+							GPIO_PIN_RESET : GPIO_PIN_SET;
+				}
+				HAL_GPIO_WritePin(DOOR_RELAY_HSD1_GPIO_Port, DOOR_RELAY_HSD1_Pin,
+						hsd1_state);
 			}
 
 			if (TA531SysEnv.TA531_env_HSD12_2 == 0)	//
