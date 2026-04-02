@@ -83,7 +83,10 @@ UART_HandleTypeDef *Serial_Num;
 #define ADC_CHANNELS 	6
 #define LightSensr_Gate 	50
 #define LIGHT_SENSOR_INVERT	0	// 0: keep raw mapping; 1: invert when hardware is wired opposite
-#define HSD1_OUTPUT_INVERT   1   // 0: HSD1 follows command directly; 1: invert HSD1 output level
+#define HSD1_OUTPUT_INVERT   0   // 0: direct; 1: invert
+#define HSD2_OUTPUT_INVERT   1   // 0: direct; 1: invert
+#define HSD3_OUTPUT_INVERT   1   // 0: direct; 1: invert
+#define HSD4_OUTPUT_INVERT   0   // 0: direct; 1: invert
 uint16_t adc_buffer[ADC_CHANNELS] = { 0 };
 
 static uint8_t NormalizeLightSensor(uint16_t raw_adc) {
@@ -105,6 +108,18 @@ static uint8_t EncodeLightAlarm(uint8_t light_level) {
 		return 1;
 	}
 	return 0;
+}
+
+static void ApplyHSDOutput(GPIO_TypeDef *port, uint16_t pin, uint8_t cmd,
+		uint8_t invert) {
+	if (cmd > 1U) {
+		return;
+	}
+	GPIO_PinState state = (cmd == 1U) ? GPIO_PIN_SET : GPIO_PIN_RESET;
+	if (invert) {
+		state = (state == GPIO_PIN_SET) ? GPIO_PIN_RESET : GPIO_PIN_SET;
+	}
+	HAL_GPIO_WritePin(port, pin, state);
 }
 
 int Version_A = 4;	//Ver  A.BC
@@ -1559,45 +1574,14 @@ int main(void) {
 			} else if (TA531SysEnv.TA531_env_WindowRR == 3) {
 			} else if (TA531SysEnv.TA531_env_WindowRR == 4) {
 			}
-			if (TA531SysEnv.TA531_env_HSD12_1 <= 1) {
-				GPIO_PinState hsd1_state =
-						(TA531SysEnv.TA531_env_HSD12_1 == 1U) ?
-								GPIO_PIN_SET : GPIO_PIN_RESET;
-				if (HSD1_OUTPUT_INVERT) {
-					hsd1_state = (hsd1_state == GPIO_PIN_SET) ?
-							GPIO_PIN_RESET : GPIO_PIN_SET;
-				}
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD1_GPIO_Port, DOOR_RELAY_HSD1_Pin,
-						hsd1_state);
-			}
-
-			if (TA531SysEnv.TA531_env_HSD12_2 == 0)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD2_GPIO_Port,
-				DOOR_RELAY_HSD2_Pin, 0);
-			} else if (TA531SysEnv.TA531_env_HSD12_2 == 1)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD2_GPIO_Port,
-				DOOR_RELAY_HSD2_Pin, 1);
-			}
-			if (TA531SysEnv.TA531_env_HSD12_3 == 0)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD3_GPIO_Port,
-				DOOR_RELAY_HSD3_Pin, 0);
-			} else if (TA531SysEnv.TA531_env_HSD12_3 == 1)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD3_GPIO_Port,
-				DOOR_RELAY_HSD3_Pin, 1);
-			}
-			if (TA531SysEnv.TA531_env_HSD12_4 == 0)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD4_GPIO_Port,
-				DOOR_RELAY_HSD4_Pin, 0);
-			} else if (TA531SysEnv.TA531_env_HSD12_4 == 1)	//
-					{
-				HAL_GPIO_WritePin(DOOR_RELAY_HSD4_GPIO_Port,
-				DOOR_RELAY_HSD4_Pin, 1);
-			}
+			ApplyHSDOutput(DOOR_RELAY_HSD1_GPIO_Port, DOOR_RELAY_HSD1_Pin,
+					TA531SysEnv.TA531_env_HSD12_1, HSD1_OUTPUT_INVERT);
+			ApplyHSDOutput(DOOR_RELAY_HSD2_GPIO_Port, DOOR_RELAY_HSD2_Pin,
+					TA531SysEnv.TA531_env_HSD12_2, HSD2_OUTPUT_INVERT);
+			ApplyHSDOutput(DOOR_RELAY_HSD3_GPIO_Port, DOOR_RELAY_HSD3_Pin,
+					TA531SysEnv.TA531_env_HSD12_3, HSD3_OUTPUT_INVERT);
+			ApplyHSDOutput(DOOR_RELAY_HSD4_GPIO_Port, DOOR_RELAY_HSD4_Pin,
+					TA531SysEnv.TA531_env_HSD12_4, HSD4_OUTPUT_INVERT);
 			TA531_Door.Door_FL = (TA531SysEnv.TA531_env_DoorSwFL & 0x03); // 左前门
 			TA531_Door.Door_FR = (TA531SysEnv.TA531_env_DoorSwFR & 0x03); // 右前门
 			TA531_Door.Door_RL = (TA531SysEnv.TA531_env_DoorSwRL & 0x03); // 左后门
